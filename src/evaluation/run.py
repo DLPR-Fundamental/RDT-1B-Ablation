@@ -72,6 +72,7 @@ def main():
         print(f"Using Diffusion Policy model with checkpoint: {args.pretrained_path}")
         policy = DiffusionPolicyAdapter(
             checkpoint_path=args.pretrained_path,
+            output_dir='.',
             device=device
         )
     elif args.model == 'rdt':

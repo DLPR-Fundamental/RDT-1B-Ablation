@@ -1,4 +1,8 @@
 from collections import deque
+
+from mani_skill.envs.sapien_env import BaseEnv
+from mani_skill.utils import common, gym_utils
+
 class BasePolicyAdapter:
     required_history = 1
     policy_name = "base_policy"
@@ -12,14 +16,13 @@ class BasePolicyAdapter:
     def run_episode(self, env, max_steps=400, base_seed=0, episode_idx=0,
                     live_view=False, save_video=False):
         obs_window = deque(maxlen=self.required_history)
-        bundle = env.reset(seed=episode_idx+base_seed)
+        bundle, _ = env.reset(seed=episode_idx+base_seed)
         
         first_obs = self._extract_first_obs(bundle, env)
         for _ in range(self.required_history):
             obs_window.append(first_obs)
 
         self.reset()
-        print(f"Bundle after reset: {bundle}")
         proprio = self._get_proprio(bundle)
         done = False
         steps = 0

@@ -32,13 +32,8 @@ class RDTPolicyAdapter(BasePolicyAdapter):
         self.policy.reset()
 
     def infer(self, obs: dict) -> np.ndarray:
-        images = obs['images']
-        images_padded = self._pad_to_rdt_format(images)
-        images_pil = [Image.fromarray(img) if img is not None else None for img in images_padded]
-
-        proprio_t = torch.tensor(
-            np.asarray(obs['state']).ravel(), 
-            device=self.device, dtype=self.dtype).unsqueeze(0)
+        images_pil = obs['images']
+        proprio_t = obs['state']
 
         text_embed = self.text_embed
 
@@ -66,10 +61,12 @@ class RDTPolicyAdapter(BasePolicyAdapter):
         return _extract_rgb(env.render(), bundle) if env.render() is not None else None
 
     def _get_proprio(self, bundle):
-        return bundle['proprio']
+        return bundle['agent']['qpos'][:, :-1]
 
     def _prepare_obs(self, obs_window, proprio):
-        return {'state': proprio, 'images': list(obs_window)}
+        images_padded = self._pad_to_rdt_format(obs_window)
+        images_pil = [Image.fromarray(img) if img is not None else None for img in images_padded]
+        return {'images': images_pil, 'state': proprio}
 
     def _load_policy(self, config, pretrained_model_path, 
                      pretrained_text_encoder_name_or_path,

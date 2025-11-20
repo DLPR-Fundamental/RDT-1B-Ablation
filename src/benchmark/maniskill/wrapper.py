@@ -36,35 +36,12 @@ class ManiSkillEnvWrapper:
             )
         self.max_steps = max_steps
 
-    def reset(self, seed: Optional[int] = None) -> Dict[str, Any]:
-        obs, _ = self.env.reset(seed=seed)
-        img = self._extract_rgb(obs)
-        proprio = self._get_proprio(obs)
-        return {'raw_obs': obs, 'rgb': img, 'proprio': proprio}
+    def reset(self, seed=None):
+        obs, info = self.env.reset(seed=seed)
+        return obs, info
 
-    def step(self, action: np.ndarray) -> tuple[Dict[str, Any], float, bool, bool, dict]:
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        img = self._extract_rgb(obs)
-        proprio = self._get_proprio(obs)
-        return {'raw_obs': obs, 'rgb': img, 'proprio': proprio}, reward, terminated, truncated, info
-
-    def _get_proprio(self, obs: dict) -> np.ndarray:
-        try:
-            qpos = np.asarray(obs['agent']['qpos']).ravel()
-            # 마지막 gripper 제외
-            proprio = qpos[:-1]
-        except Exception:
-            proprio = np.zeros(0)
-        return proprio
-
-    def _extract_rgb(self, obs: dict) -> Optional[np.ndarray]:
-        try:
-            img = self.env.render()
-            if isinstance(img, torch.Tensor):
-                img = img.cpu().numpy()
-            return img
-        except RuntimeError:
-            return None
+    def step(self, action):
+        return self.env.step(action)
 
     def render(self):
         return self.env.render()
