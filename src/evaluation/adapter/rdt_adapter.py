@@ -1,27 +1,87 @@
-from __future__ import annotations
-
-from typing import Optional
-
+import os
+from typing import List, Optional
+from PIL import Image
 import numpy as np
 import torch
-from PIL import Image
+from collections import deque
+
 from src.evaluation.adapter.base import BasePolicyAdapter
+from src.utility.helper import _extract_rgb
 
 class RDTPolicyAdapter(BasePolicyAdapter):
-    required_frames = 2  # RDT 모델 입력 프레임 수
+    required_history = 2        # RDT-1B model minimum history length
+    required_slots = 6          # RDT-1B model required slots (3 cam × 2 frame)
+    policy_name = "rdt-1b"
 
-    def __init__(self, config: dict, pretrained_path=None, text_embed=None,
-                 device='cuda', dtype=torch.float16, quant_mode='none', action_downsample=1):
+    def __init__(self, 
+                 config: dict, 
+                 text_embed=None, 
+                 pretrained_model_path=None, 
+                 pretrained_text_encoder_name_or_path=None, 
+                 pretrained_vision_encoder_name_or_path="google/siglip-so400m-patch14-384",
+                 device='cuda', dtype=torch.float16, action_downsample=4):
         self.device = device
         self.dtype = dtype
         self.action_downsample = action_downsample
-        self.text_embed = text_embed
-        self.policy = self._load_policy(config, pretrained_path)
+        self.text_embed = text_embed.to(device, dtype) if text_embed is not None else None
+        self.policy = self._load_policy(config, pretrained_model_path, 
+                                       pretrained_text_encoder_name_or_path,
+                                       pretrained_vision_encoder_name_or_path)
 
-    def _load_policy(self, config, pretrained_path):
+    def reset(self):
+        self.policy.reset()
+
+    def infer(self, obs: dict) -> np.ndarray:
+        images = obs['images']
+        images_padded = self._pad_to_rdt_format(images)
+        images_pil = [Image.fromarray(img) if img is not None else None for img in images_padded]
+
+        proprio_t = torch.tensor(
+            np.asarray(obs['state']).ravel(), 
+            device=self.device, dtype=self.dtype).unsqueeze(0)
+
+        text_embed = self.text_embed
+
+        with torch.cuda.amp.autocast(enabled=(self.device == 'cuda'), dtype=self.dtype):
+            actions = self.policy.step(proprio_t, images_pil, text_embed).squeeze(0)
+
+        if self.action_downsample > 1:
+            actions = actions[::self.action_downsample]
+
+        return actions.detach().cpu().numpy()
+
+    def _pad_to_rdt_format(self, images: List) -> List:
+        """required_history=2 → required_slots=6 reshape, only for rdt-1b"""
+        padded = []
+        for img in images:
+            padded.extend([img, None, None])
+        while len(padded) < self.required_slots:
+            padded.append(None)
+        return padded[:self.required_slots]
+
+    def _extract_first_obs(self, bundle, env):
+        return _extract_rgb(env.render(), bundle)
+
+    def _extract_obs(self, bundle, env):
+        return _extract_rgb(env.render(), bundle) if env.render() is not None else None
+
+    def _get_proprio(self, bundle):
+        return bundle['proprio']
+
+    def _prepare_obs(self, obs_window, proprio):
+        return {'state': proprio, 'images': list(obs_window)}
+
+    def _load_policy(self, config, pretrained_model_path, 
+                     pretrained_text_encoder_name_or_path,
+                     pretrained_vision_encoder_name_or_path):
         from src.model.policy.rdt.maniskill_model import create_model
-        policy = create_model(args=config, dtype=self.dtype, pretrained=pretrained_path)
-        # device 이동
+        policy = create_model(
+            args=config, 
+            dtype=self.dtype, 
+            pretrained=pretrained_model_path,
+            pretrained_text_encoder_name_or_path=pretrained_text_encoder_name_or_path,
+            pretrained_vision_encoder_name_or_path=pretrained_vision_encoder_name_or_path,
+        )
         if hasattr(policy, 'policy'):
             policy.policy = policy.policy.to(self.device, dtype=self.dtype)
         if getattr(policy, 'vision_model', None):
@@ -31,42 +91,24 @@ class RDTPolicyAdapter(BasePolicyAdapter):
         policy.reset()
         return policy
 
-    def reset(self):
-        self.policy.reset()
-
-    def infer(self, obs: dict) -> np.ndarray:
-        # proprio
-        proprio_t = torch.tensor(np.asarray(obs['proprio']).ravel(),
-                                device=self.device,
-                                dtype=self.dtype).unsqueeze(0)
-
-        # images: PIL/ndarray -> tensor, device 이동
-        images = obs['images'][:self.required_frames]
-        images_t = []
-        for img in images:
-            if img is None:
-                images_t.append(None)
-            elif isinstance(img, np.ndarray):
-                images_t.append(torch.tensor(img, device=self.device, dtype=self.dtype).permute(2,0,1).unsqueeze(0))
-            elif isinstance(img, Image.Image):
-                t = torch.tensor(np.array(img), device=self.device, dtype=self.dtype).permute(2,0,1).unsqueeze(0)
-                images_t.append(t)
-            else:
-                raise TypeError(f"Unknown image type: {type(img)}")
-
-        # text embed device/dtype
-        text_embed = None
-        if self.text_embed is not None:
-            text_embed = self.text_embed.to(self.device, dtype=self.dtype) if isinstance(self.text_embed, torch.Tensor) else None
-
-        # 추론
-        if self.device == 'cuda':
-            with torch.cuda.amp.autocast(dtype=self.dtype):
-                actions = self.policy.step(proprio_t, images_t, text_embed).squeeze(0)
-        else:
-            actions = self.policy.step(proprio_t, images_t, text_embed).squeeze(0)
-
-        if self.action_downsample > 1:
-            actions = actions[::self.action_downsample]
-
-        return actions.detach().cpu().numpy()
+    def _load_lang_embed(env_id: str, explicit_path: Optional[str]):
+        candidates = []
+        if explicit_path is not None:
+            candidates.append(explicit_path)
+        candidates += [
+            f'./text_embed_{env_id}.pt',
+            f'lang_embeds/text_embed_{env_id}.pt',
+            f'data/text_embed_{env_id}.pt',
+        ]
+        for p in candidates:
+            if p and os.path.exists(p):
+                print(f"[INFO] Using precomputed language embedding: {p}")
+                emb = torch.load(p, map_location="cpu")
+                # (L, D) → (1, L, D) 형태 보정
+                if isinstance(emb, torch.Tensor) and emb.ndim == 2:
+                    emb = emb.unsqueeze(0)
+                return emb
+        raise FileNotFoundError(
+            f"Precomputed language embedding not found. "
+            f"Pass --lang_embeddings_path or place text_embed_{env_id}.pt at repo root."
+        )

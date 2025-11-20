@@ -46,8 +46,8 @@ def _find_first_frame(x: Any) -> Optional[np.ndarray]:
                 return arr
     return None
 
-
 def _extract_rgb(frame: Any, obs: Optional[dict] = None) -> np.ndarray:
+    """Try to extract (H, W, 3) numpy RGB from env.render() or obs."""
     arr = _find_first_frame(frame)
     if arr is not None:
         return arr
@@ -56,7 +56,7 @@ def _extract_rgb(frame: Any, obs: Optional[dict] = None) -> np.ndarray:
         if arr is not None:
             return arr
     raise RuntimeError(
-        "Could not extract an RGB ndarray from env.render()/obs. "
-        "Try obs_mode='rgb' and render_mode='rgb_array'."
+        f"Could not extract an RGB ndarray from env.render()/obs. "
+        f"Got types: render={type(frame)}, obs={type(obs)}. "
+        f"Try obs_mode='rgb' and render_mode='rgb_array'."
     )
-

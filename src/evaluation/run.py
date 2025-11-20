@@ -1,20 +1,10 @@
-from __future__ import annotations
 import argparse
 import os
 import random
 import numpy as np
+import yaml
 import torch
 import traceback
-
-try:
-    from src.model.policy.diffusion_policy.workspace.robotworkspace import RobotWorkspace  # type: ignore
-except Exception:
-    RobotWorkspace = None
-
-try:
-    from src.model.policy.rdt.maniskill_model import create_model  # type: ignore
-except Exception:
-    create_model = None
 
 from src.benchmark.maniskill.wrapper import ManiSkillEnvWrapper
 from src.evaluation.evaluator import Evaluator
@@ -24,11 +14,11 @@ from src.evaluation.adapter.rdt_adapter import RDTPolicyAdapter
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', choices=['dp', 'rdt'], required=True, help='dp | rdt')
-    parser.add_argument('--env', default='PickCube-v1')
+    parser.add_argument('--env', default='PickCube-v1', required=True)
     parser.add_argument('--obs-mode', default='rgb')
     parser.add_argument('--render-mode', default='rgb_array')
     parser.add_argument('--num-traj', type=int, default=25)
-    parser.add_argument('--pretrained_path', type=str, default=None)
+    parser.add_argument('--pretrained_path', type=str, required=True)
     parser.add_argument('--random_seed', type=int, default=0)
     parser.add_argument('--sim-backend', type=str, default='auto')
     parser.add_argument('--shader', type=str, default='default')
@@ -56,8 +46,17 @@ def set_seeds(seed: int):
 def main():
     args = parse_args()
     set_seeds(args.random_seed)
+    print(f"Random seed set to {args.random_seed}")
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'  # 🔹 한 번만 선언
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cuda.matmul.allow_tf32 = True
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"Using device: {device}")
+    
+    if device == 'cuda':
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.synchronize()
 
     env_wrapper = ManiSkillEnvWrapper(
         env_id=args.env,
@@ -67,33 +66,35 @@ def main():
         max_steps=args.max_steps,
         shader=args.shader,
     )
+    print(f"Environment '{args.env}' initialized with obs_mode='{args.obs_mode}', render_mode='{args.render_mode}'")
 
-    if args.model == 'dp':
-        if args.pretrained_path is None:
-            raise RuntimeError('Diffusion Policy 체크포인트 경로를 --pretrained_path 로 지정하세요')
+    if args.model == 'diffusion_policy' or args.model == 'dp':
+        print(f"Using Diffusion Policy model with checkpoint: {args.pretrained_path}")
         policy = DiffusionPolicyAdapter(
             checkpoint_path=args.pretrained_path,
             device=device
         )
-
-    elif args.model == 'rdt':  # 🔹 RDT 전용 옵션만 전달
-        config = {}
+    elif args.model == 'rdt':
+        print(f"Using RDT model with checkpoint: {args.pretrained_path}")
+        import yaml
+        with open('configs/base.yaml', "r") as fp:
+            config = yaml.safe_load(fp)
         dtype = torch.float16 if args.dtype == 'fp16' else (torch.bfloat16 if args.dtype == 'bf16' else torch.float32)
 
-        text_embed = None
-        if args.lang_embeddings_path is not None:
-            text_embed = torch.load(args.lang_embeddings_path, map_location=device)
+        if args.lang_embeddings_path is None:
+            raise ValueError("--lang-embeddings-path required for RDT model...")
 
         policy = RDTPolicyAdapter(
             config=config,
-            pretrained_path=args.pretrained_path,
-            text_embed=text_embed,
+            text_embed=RDTPolicyAdapter._load_lang_embed(args.env, args.lang_embeddings_path),
+            pretrained_model_path=args.pretrained_path,
             device=device,
             dtype=dtype,
-            action_downsample=args.action_downsample  # 🔹 RDT 전용 옵션
+            action_downsample=args.action_downsample
         )
+        print(f"Using RDT model with checkpoint: {args.pretrained_path}")
     else:
-        raise RuntimeError(f'알 수 없는 모델: {args.model}')
+        raise RuntimeError(f'Unknown model : {args.model}')
 
     evaluator = Evaluator(
         env=env_wrapper,
@@ -107,10 +108,14 @@ def main():
     try:
         results = evaluator.run(base_seed=20241201)
     except Exception:
-        print("예외 발생! 전체 트레이스백을 출력합니다:")
+        print("Exception occurred! Printing full traceback:")
         traceback.print_exc()
-        raise   # 원하면 재발생시키지 않고 return 하도록 바꿀 수 있음
+        return
     
     summary_path = f"eval_summary_{args.model}_{os.path.basename(args.pretrained_path or 'none')}.txt"
     with open(summary_path, 'a') as f:
         f.write(f"env={args.env},seed={args.random_seed},num={args.num_traj},success_rate={results['success_rate']:.2f}\n")
+
+
+if __name__ == '__main__':
+    main()

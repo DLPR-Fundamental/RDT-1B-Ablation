@@ -2,7 +2,6 @@ import gymnasium as gym
 import numpy as np
 import torch
 from typing import Optional, Any, Dict
-
 from mani_skill.envs.sapien_env import BaseEnv  # noqa: F401
 from mani_skill.utils import common, gym_utils   # noqa: F401
 
