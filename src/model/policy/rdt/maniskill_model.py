@@ -9,9 +9,9 @@ from PIL import Image
 from torchvision import transforms
 
 from configs.state_vec import STATE_VEC_IDX_MAPPING
-from src.model.models.multimodal_encoder.siglip_encoder import SiglipVisionTower
-from src.model.models.multimodal_encoder.t5_encoder import T5Embedder
-from src.model.models.rdt_runner import RDTRunner
+from src.model.multimodal_encoder.siglip_encoder import SiglipVisionTower
+from src.model.multimodal_encoder.t5_encoder import T5Embedder
+from src.model.policy.rdt.rdt_runner import RDTRunner
 
 try:
     import bitsandbytes as bnb
