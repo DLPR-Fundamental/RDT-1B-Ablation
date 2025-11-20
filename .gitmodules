@@ -1,9 +1,9 @@
-[submodule "src/evaluation/diffusion_policy"]
-	path = src/evaluation/diffusion_policy
+[submodule "src/model/models/policy/diffusion_policy"]
+	path = src/model/models/policy/diffusion_policy
 	url = https://github.com/LBG21/diffusion_policy.git
-[submodule "src/evaluation/octo"]
-	path = src/evaluation/octo
+[submodule "src/model/models/policy/octo"]
+	path = src/model/models/policy/octo
 	url = https://github.com/octo-models/octo.git
-[submodule "src/evaluation/openvla"]
-	path = src/evaluation/openvla
+[submodule "src/model/models/policy/openvla"]
+	path = src/model/models/policy/openvla
 	url = https://github.com/openvla/openvla.git
