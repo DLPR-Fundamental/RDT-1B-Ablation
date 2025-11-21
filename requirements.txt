@@ -29,3 +29,5 @@ plotly==6.3.1
 wandb==0.22.3
 
 dlimp @ git+https://github.com/kvablack/dlimp@5edaa4691567873d495633f2708982b42edf1972
+
+seaborn==0.13.2

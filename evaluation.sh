@@ -60,6 +60,7 @@ if [ ! -d "pretrained_models/diffusion_policy" ]; then
 fi
 # Evaluate
 python -m src.evaluation.run --model dp --random_seed $RANDOM_SEED --env $ENV_ID --pretrained_path pretrained_models/diffusion_policy/700.ckpt --num-traj $NUM_TRAJ --max-step $MAX_STEP $IS_LIVE_VIEW
+python -m src.utility.visualize_success_rate --input_file eval_summary_dp_700.ckpt.txt --output_dir results/diffusion_policy
 
 ############################## RDT-1B Evaluation ##############################
 # Download
@@ -71,8 +72,7 @@ fi
 LANG_EMBEDS_PATH=pretrained_models/lang_embeds/text_embed_${ENV_ID}.pt # Set language embeddings path
 python -m src.evaluation.run --model rdt --random_seed $RANDOM_SEED --env $ENV_ID --pretrained_path pretrained_models/rdt/mp_rank_00_model_states.pt --num-traj $NUM_TRAJ  --max-step $MAX_STEP \
                             --action-downsample 4 --lang-embeddings-path $LANG_EMBEDS_PATH $IS_LIVE_VIEW
-
-
+python -m src.utility.visualize_success_rate --input_file eval_summary_rdt_mp_rank_00_model_states.pt.txt --output_dir results/rdt
 
 
 # # Download pretrained octo model(if not already present)
