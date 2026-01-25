@@ -5,12 +5,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
-from diffusers.schedulers.scheduling_dpmsolver_multistep import \
-    DPMSolverMultistepScheduler
+from diffusers.schedulers.scheduling_dpmsolver_multistep import DPMSolverMultistepScheduler
 
-from src.model.models.hub_mixin import CompatiblePyTorchModelHubMixin
-from src.model.models.rdt.model import RDT
-
+from src.model.policy.rdt.hub_mixin import CompatiblePyTorchModelHubMixin
+from src.model.policy.rdt.model import RDT
 
 class RDTRunner(
         nn.Module, 

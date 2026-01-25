@@ -1,4 +1,3 @@
-# eval_sim/eval_rdt_maniskill.py
 from typing import Optional, Any
 import sys
 sys.path.append('/')
